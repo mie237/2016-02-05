@@ -1,0 +1,226 @@
+---
+title: 'MIE237'
+author: "Neil Montgomery"
+date: "2016-02-05"
+output: 
+  ioslides_presentation: 
+    css: 'styles.css' 
+    widescreen: true 
+    transition: 0.001
+---
+\newcommand{\Var}[1]{\text{Var}\left( #1 \right)}
+\newcommand{\E}[1]{E\left( #1 \right)}
+\newcommand{\Sample}[1]{#1_1,\ldots,#1_n}
+\newcommand{\od}[2]{\overline #1_{#2\cdot}}
+\newcommand{\flist}[2]{\{#1_1, #1_2, \ldots, #1_#2\}}
+\newcommand{\samp}[2]{#1_1, #1_2, \ldots, #1_#2}
+\renewcommand{\bar}[1]{\overline{#1}}
+\newcommand{\ve}{\varepsilon}
+\newcommand{\bs}[1]{\boldsymbol{#1}}
+
+
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+# regression
+
+## another example
+
+From the 2015 exam: "A gas distribution company is concerned with the health of the gas meters being used by its industrial customers. There are over 20\,000 such customers, which is too many to visit to examine each gas meter. So they select a sample of $n$=400 meters from the database and send technicians to visit only these meters. The technicians perform an analysis of each meter, which includes some testing, and record the following data (along with the meter ID)"
+
+* `max_kpa`:  maximum test pressure in kPa
+
+* `volts`: result of an electric test run through meter in $V$
+
+* ...a bunch of others.
+
+```{r, message=FALSE}
+library(dplyr)
+rust_level <- function(x) {
+  rust <- c("low", "medium", "high")
+  if(x < 100) {
+    r <- sample(rust, 1, prob=c(0.6, 0.3, 0.1))
+  } else if(x < 140) {
+    r <- sample(rust, 1, prob=c(0.2, 0.6, 0.2))
+  } else {
+    r <- sample(rust, 1, prob=c(0.1, 0.3, 0.6))
+  }
+}
+
+set.seed(1)
+n <- 400
+error <- rnorm(n, 0, 1)
+
+age <- round(rnorm(n, 120, 20), 0)
+max_kpa <- 200 + 50*rbeta(n, 2, 1)
+min_kpa <- 400 - max_kpa + rnorm(n,0, 10)
+tot_gas <- age*400 + rweibull(n, 2, 10000)
+rust <- factor(sapply(age, rust_level), levels=c("low", "medium", "high"), ordered=T)
+brand <- factor(sample(c("A", "B"), n, repl=T, prob=c(0.3, 0.7)))
+volts <- -10 + 
+  0.005 * tot_gas/age + 
+  0.02 * max_kpa - 
+  0.02 * min_kpa + 
+  0.29 * as.numeric(rust) + 
+  0.07 * as.numeric(brand) + 
+  error
+
+meters <- data.frame(age, max_kpa, min_kpa, tot_gas, volts, rust, brand)
+k_lm <- lm(volts ~ max_kpa, data = meters)
+```
+
+## (almost) the question
+
+The simple regression model with `volts` as the response and `max_kpa` as the input is fit resulting in the following output with some numbers removed. Recall that the sample variance of the `volts` readings is 1.4011 and the sample size is 400.
+
+Questions: fill in the ANOVA table (sum of squares decomposition etc.) and do the hypothesis test for $H_0: \beta_1 = 0$ versus $H_1: \beta_1\ne 0$. 
+
+## the modified output
+
+    Coefficients:
+                  Estimate Std. Error t value Pr(>|t|)    
+    (Intercept) -15.761059   1.054718 -14.943   <2e-16 
+    max_kpa       MISSING    0.004506 MISSING  MISSING 
+    ---
+    
+    Residual standard error: 1.066 on 398 degrees of freedom
+    Multiple R-squared:  0.1913,	Adjusted R-squared:  0.1893 
+    F-statistic: 94.14 on MISSING and MISSING DF,  p-value: MISSING
+
+And I gave an "analyis of variance" table (with the sum of squares decomposition etc.) with *everything* missing.
+
+## unmodified output
+
+    Coefficients:
+                  Estimate Std. Error t value Pr(>|t|)    
+    (Intercept) -15.761059   1.054718 -14.943   <2e-16 ***
+    max_kpa       0.043719   0.004506   9.703   <2e-16 ***
+    ---
+    Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+    Residual standard error: 1.066 on 398 degrees of freedom
+    Multiple R-squared:  0.1913,	Adjusted R-squared:  0.1893 
+    F-statistic: 94.14 on 1 and 398 DF,  p-value: < 2.2e-16
+    
+```{r}
+anova(k_lm)
+```
+
+## Model assumptions and diagnostic plots { .build }
+
+Model: $Y_i = \beta_0+\beta_1 x_i + 
+\varepsilon_i$ with $\varepsilon_i\sim N(0,\sigma^2)$
+
+**Assumption 1** Normal error. Evaluate using normal quantile plot of the residuals $\hat e_i = y_i - \hat y_i$.
+
+**Assumption 2** Equal variance. Evaluate using scatterplot of residuals $\hat e_i$ (horizontal) versus fitted values $\hat y_i$ (vertical)
+
+**Assumption 3** Linear relationship between $x$ and $y$. (Not exactly an assumption, per se, but we'll call it one.) Evaluation using scatterplot of residuals $\hat e_i$ (vertical) versus fitted values $\hat y_i$ (horizontal)
+
+***Assumptions 2 and 3*** use the *same* plot to detect *different* problems.
+
+## Sugar example
+
+<div class="columns-2">
+```{r, fig.width=4.5}
+library(ggplot2)
+library(broom)
+library(rio)
+sugar <- import("Ex11.05.txt")
+sugar %>% 
+  lm(`Coverted-sugar` ~ Temperature, data = .) -> sugar_lm
+
+# augment with residuals and other stuff
+
+sugar_lm_a <- augment(sugar_lm)
+
+sugar_lm_a %>% 
+  ggplot(aes(sample = .resid)) + stat_qq() + labs(title="normal plot of residuals")
+```
+
+```{r, fig.width=4.5}
+sugar_lm_a %>% 
+  ggplot(aes(x = .fitted, y = .resid)) + geom_point() + labs(title="residuals v. fitted values")
+```
+</div>
+
+## Exam example `volts` versus `kpa_max`
+
+<div class="columns-2">
+```{r, fig.width=4.5}
+k_lm_a <- augment(k_lm)
+
+k_lm_a %>% 
+  ggplot(aes(sample = .resid)) + stat_qq() + labs(title="normal plot of residuals")
+```
+
+```{r, fig.width=4.5}
+k_lm_a %>% 
+  ggplot(aes(x = .fitted, y = .resid)) + geom_point() + labs(title="residuals v. fitted values")
+```
+</div>
+
+## 11.39 from the textbook
+
+Data: textbook question 11.39. Studies the effect of organophosphate dose
+on mouse brain activity.
+
+<div class="columns-2">
+```{r, fig.width=5}
+mouse <- import("Ex11.37.txt")
+mouse %>%
+  lm(Activity ~ Dose, data = .) -> mouse_lm
+
+mouse %>% 
+  ggplot(aes(x=Dose, y=Activity)) + 
+  geom_point() +
+  stat_smooth(method="lm", se=FALSE)
+```
+
+```{r, results='asis'}
+library(xtable)
+mouse_lm_x <- xtable(tidy(mouse_lm), digits = 3)
+print.xtable(mouse_lm_x, type = "html", include.rownames = FALSE )
+```
+</div>
+
+## mouse data "residual plots"
+
+<div class="columns-2">
+```{r, fig.width=4.5}
+mouse_lm_a <- augment(mouse_lm)
+
+mouse_lm_a %>% 
+  ggplot(aes(sample = .resid)) + stat_qq() + labs(title="normal plot of residuals")
+```
+
+```{r, fig.width=4.5}
+mouse_lm_a %>% 
+  ggplot(aes(x = .fitted, y = .resid)) + geom_point() + labs(title="residuals v. fitted values")
+```
+</div>
+
+## More plots - dataset I { .build }
+
+![obvious](y1x_line.png)
+
+![obvious](y1x_qq.png)
+
+## More plots - dataset I
+
+![obvious](y1x_resid.png)
+
+## More plots - dataset II { .build }
+
+![nonobvious](y2x_line.png)
+
+![nonobvious](y2x_resid.png)
+
+## More plots - dataset III { .build }
+![hetero](y3x_line.png)
+
+![hetero](y3x_resid.png)
+
+
